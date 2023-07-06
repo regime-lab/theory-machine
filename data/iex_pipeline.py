@@ -43,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
