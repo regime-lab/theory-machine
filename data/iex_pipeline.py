@@ -39,26 +39,23 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
   
   OHLC = pd.DataFrame()
   for date in tqdm(date_strings): 
+   
     dateCol = 'fullTimestamp'
-    #dateCol = 'date'
-    
-    try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
-      
-      ohlc_df = None
-      if os.path.isfile(f'data/iex/{loc_sym}_{date}.csv'):
-        ohlc_df = pd.read_csv(f'data/iex/{loc_sym}_{date}.csv')
-      else:
-        ohlc = requests.get(ENDP).json()
-        print(OHLC)
-        ohlc_df = pd.DataFrame.from_records(ohlc)
-        ohlc_df.to_csv(f'data/iex/{loc_sym}_{date}.csv')
 
+    try:
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
+      ohlc_df = None
+      ohlc = requests.get(ENDP).json()
+      ohlc_df = pd.DataFrame.from_records(ohlc)
+   
+      ohlc_df.to_csv(f'data/iex/{loc_sym}_{date}.csv')
       ohlc_df[dateCol] = ohlc_df.apply(parser, axis=1)
       
       if col in ohlc_df \
                   and not ohlc_df[col].isnull().all():
+            
         OHLC = OHLC.append(ohlc_df)
+        print(OHLC['marketClose'])
 
     except Exception as e:
       print(e)
@@ -76,7 +73,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
 
 def get_barset(symbol, symbol_stdate, symbol_eddate, ref_index=None):
 
-  cls = 'marketClose' 
+  cls = 'close' 
   ohlc_df = get_data(symbol, symbol_stdate, symbol_eddate, ref_index=ref_index)
   local_barset = pd.DataFrame()
   local_barset['Close'] = ohlc_df[cls] 
@@ -97,7 +94,7 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
       closes = b['Close']
 
       base_serie = pd.Series(data=closes, name=p)
-      log_serie = pd.Series(data=np.diff(np.log(closes)), name=p)
+      log_serie = pd.Series(data=np.diff(closes), name=p)
 
       log_returns = pd.concat([log_returns, log_serie], axis=1, ignore_index=False)
       base_ohlc = pd.concat([base_ohlc, base_serie], axis=1, ignore_index=False)
@@ -112,13 +109,13 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2023-7-1"
-symbol_eddate = "2023-7-7"  
+symbol_stdate = "2023-7-4"
+symbol_eddate = "2023-7-6"  
 
 def fetch_assets(assets, invalidate_cache=False): 
 
   log_returns = None
-  log_returns, base_ohlc = get_logrets(SYMBOL, symbol_stdate, symbol_eddate, assets=assets)
+  log_returns, _ = get_logrets(SYMBOL, symbol_stdate, symbol_eddate, assets=assets)
   return log_returns
 
 
@@ -165,19 +162,20 @@ def plot_auto_correlation(auto_corr):
     plt.show()
 
 
-assetlist = [ 'IXN', 'IEF', 'GSG' ]
+assetlist = [ 'TLT', 'SPY' ]
 num_components = 4
 assets = fetch_assets(assetlist, invalidate_cache=True)
 
-# Expanding z-score
-expanding_zscore = lambda serie: serie# [ stats.zscore(serie[:x]).values[-1] for x in range(30, len(serie) + 1) ]
+# Apply z-score in a rolling way that does not create lookahead bias 
+windowed_zscore = lambda serie: stats.zscore(serie).values[-1] 
 
 # Clean data
-m6_subset1 = assets.replace([np.inf, np.nan, -np.inf], 0.0).dropna().reset_index().drop(columns='index')
-local_time_series1 = m6_subset1['IXN']
-local_time_series2 = m6_subset1['IEF']
-local_time_series3 = m6_subset1['GSG']
- 
+m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
+local_time_series1 = m6_subset1['TLT'].rolling(60).apply(windowed_zscore).dropna().values
+#    .rolling(100).mean().dropna().values
+local_time_series2 = m6_subset1['SPY'].rolling(60).apply(windowed_zscore).dropna().values
+#    .rolling(100).mean().dropna().values
+    
 # Calculate auto-correlation
 #auto_corr = calculate_auto_correlation(local_time_series)
 
@@ -186,41 +184,47 @@ local_time_series3 = m6_subset1['GSG']
   
 # Evaluate kernel self similarity matrix (aka 'affinity matrix') as it grows with data 
 kernel = gpytorch.kernels.RBFKernel(lengthscale=10)
-C = (kernel(torch.tensor(local_time_series1)).evaluate()).detach().numpy() 
-CC = (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy()
-CCC = (kernel(torch.tensor(local_time_series3)).evaluate()).detach().numpy()  
-eigenvalues1, eigenvectors1 = np.linalg.eig(C)
-eigenvalues2, eigenvectors2 = np.linalg.eig(CC)
-eigenvalues3, eigenvectors3 = np.linalg.eig(CCC)
+eigenvalues1, eigenvectors1 = np.linalg.eig( 
+  (kernel(torch.tensor(local_time_series1)).evaluate()).detach().numpy() )
+eigenvalues2, eigenvectors2 = np.linalg.eig(
+  (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy()  )
        
-# Cluster eigenvectors (TODO Spectral clustering + Random Fourier Features + Wavelet research and connections)
+# Cluster eigenvectors (
+  # TODO 
+  #   Spectral clustering + 
+  #   Random Fourier Features + 
+  #   Wavelet research
+  # )
+sns.distplot([float(x) for x in eigenvectors1[:, 0]])
+sns.distplot([float(x) for x in eigenvectors2[:, 0]])
+plt.show()
+
 featuredf = pd.DataFrame()
-featuredf['x0']=[float(x) for x in eigenvectors1[:, 1]]
-featuredf['x1']=[float(x) for x in eigenvectors2[:, 1]]
-featuredf['x2']=[float(x) for x in eigenvectors3[:, 1]]
-#sns.lineplot(data=featuredf)
-#plt.show()
-kmeans_n=4
+featuredf['x0']=[float(x) for x in eigenvectors1[:, 0]]
+featuredf['x1']=[float(x) for x in eigenvectors2[:, 0]]
+
+kmeans_n=2
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
 
-sns.lineplot(data=local_time_series1, ax=ax, label='IXN')
-sns.lineplot(data=local_time_series2, ax=ax, label='IEF')
-sns.lineplot(data=local_time_series3, ax=ax, label='GSG')
+sns.lineplot(data=np.cumsum(local_time_series1), ax=ax, label=assetlist[0])
+sns.lineplot(data=np.cumsum(local_time_series2), ax=ax, label=assetlist[1])
 state_counts = np.zeros(kmeans_n)
 for M1 in kmeans_lbl:
     state_counts[M1] += 1 
     
 for M2 in range(len(kmeans_lbl)): 
-    if kmeans_lbl[M2] == np.argmax(state_counts):
+    if kmeans_lbl[M2] == np.argmin(state_counts):
         ax.axvline(M2, color='black', alpha=0.15)
-plt.title('rolling mean price change')
+plt.title('RBFKernel Eigenvector Clustering')
 plt.legend()
+plt.grid(True)
 plt.show()
 
 # Plot the evaluation results
 fig, ax = plt.subplots()
-im = ax.imshow(C, cmap='viridis', origin='lower')
+im = ax.imshow(
+  (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy(), cmap='viridis', origin='lower')
 
 # Add colorbar
 cbar = ax.figure.colorbar(im, ax=ax)
