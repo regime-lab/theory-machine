@@ -109,7 +109,7 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2023-7-4"
+symbol_stdate = "2023-7-1"
 symbol_eddate = "2023-7-6"  
 
 def fetch_assets(assets, invalidate_cache=False): 
@@ -171,9 +171,9 @@ windowed_zscore = lambda serie: stats.zscore(serie).values[-1]
 
 # Clean data
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
-local_time_series1 = m6_subset1['TLT'].rolling(60).apply(windowed_zscore).dropna().values
+local_time_series1 = m6_subset1['TLT'].rolling(450).apply(windowed_zscore).dropna().values
 #    .rolling(100).mean().dropna().values
-local_time_series2 = m6_subset1['SPY'].rolling(60).apply(windowed_zscore).dropna().values
+local_time_series2 = m6_subset1['SPY'].rolling(450).apply(windowed_zscore).dropna().values
 #    .rolling(100).mean().dropna().values
     
 # Calculate auto-correlation
@@ -207,8 +207,8 @@ kmeans_n=2
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
 
-sns.lineplot(data=np.cumsum(local_time_series1), ax=ax, label=assetlist[0])
-sns.lineplot(data=np.cumsum(local_time_series2), ax=ax, label=assetlist[1])
+sns.lineplot(data=local_time_series1, ax=ax, label=assetlist[0])
+sns.lineplot(data=local_time_series2, ax=ax, label=assetlist[1])
 state_counts = np.zeros(kmeans_n)
 for M1 in kmeans_lbl:
     state_counts[M1] += 1 
