@@ -43,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
@@ -94,7 +94,7 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
       closes = b['Close']
 
       base_serie = pd.Series(data=closes, name=p)
-      log_serie = pd.Series(data=np.diff(closes), name=p)
+      log_serie = pd.Series(data=closes, name=p)
 
       log_returns = pd.concat([log_returns, log_serie], axis=1, ignore_index=False)
       base_ohlc = pd.concat([base_ohlc, base_serie], axis=1, ignore_index=False)
@@ -109,7 +109,7 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2023-7-1"
+symbol_stdate = "2023-6-26"
 symbol_eddate = "2023-7-6"  
 
 def fetch_assets(assets, invalidate_cache=False): 
@@ -119,50 +119,8 @@ def fetch_assets(assets, invalidate_cache=False):
   return log_returns
 
 
-def generate_time_series(length, autocorr_decays):
-    """
-    Generate a time series with LRD using autocorr_decays array. 
-    Parameters:
-    - length: int, length of the time series
-    - autocorr_decays: float array, decay factor controlling long-range dependence
-    Returns:
-    - time_series: numpy array, generated time series
-    """
-    time_series = np.zeros(length)
-    for i in range(1, length):
-        decay = autocorr_decays[i] if i < len(autocorr_decays) else 0.
-        time_series[i] = decay * time_series[i-1] + np.random.normal(loc=0, scale=1)
-    return time_series
 
-def calculate_auto_correlation(time_series):
-    """
-    Calculate auto-correlation of a time series.
-    Parameters:
-    - time_series: numpy array, input time series
-    Returns:
-    - auto_corr: numpy array, auto-correlation values
-    """
-    length = len(time_series)
-    auto_corr = np.correlate(time_series, time_series, mode='full')
-    auto_corr = auto_corr[length-1:]
-    auto_corr /= auto_corr[0]  
-    return auto_corr
-
-def plot_auto_correlation(auto_corr):
-    """
-    Plot the auto-correlation values.
-    Parameters:
-    - auto_corr: numpy array, auto-correlation values
-    """
-    plt.plot(auto_corr)
-    plt.xlabel('Lag')
-    plt.ylabel('Auto-correlation')
-    plt.title('Auto-correlation of Time Series')
-    plt.grid(True)
-    plt.show()
-
-
-assetlist = [ 'TLT', 'SPY' ]
+assetlist = [ 'QQQ', 'TLT' ]
 num_components = 4
 assets = fetch_assets(assetlist, invalidate_cache=True)
 
@@ -171,23 +129,17 @@ windowed_zscore = lambda serie: stats.zscore(serie).values[-1]
 
 # Clean data
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
-local_time_series1 = m6_subset1['TLT'].rolling(450).apply(windowed_zscore).dropna().values
+local_time_series1 = m6_subset1[assetlist[0]].pct_change().rolling(360).apply(windowed_zscore).dropna().values
 #    .rolling(100).mean().dropna().values
-local_time_series2 = m6_subset1['SPY'].rolling(450).apply(windowed_zscore).dropna().values
+local_time_series2 = m6_subset1[assetlist[1]].pct_change().rolling(360).apply(windowed_zscore).dropna().values
 #    .rolling(100).mean().dropna().values
     
-# Calculate auto-correlation
-#auto_corr = calculate_auto_correlation(local_time_series)
-
-# Plot auto-correlation 
-#plot_auto_correlation(auto_corr[1:])
-  
-# Evaluate kernel self similarity matrix (aka 'affinity matrix') as it grows with data 
+# Evaluate kernel self similarity matrix 
 kernel = gpytorch.kernels.RBFKernel(lengthscale=10)
 eigenvalues1, eigenvectors1 = np.linalg.eig( 
   (kernel(torch.tensor(local_time_series1)).evaluate()).detach().numpy() )
 eigenvalues2, eigenvectors2 = np.linalg.eig(
-  (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy()  )
+  (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy() )
        
 # Cluster eigenvectors (
   # TODO 
@@ -195,17 +147,18 @@ eigenvalues2, eigenvectors2 = np.linalg.eig(
   #   Random Fourier Features + 
   #   Wavelet research
   # )
-sns.distplot([float(x) for x in eigenvectors1[:, 0]])
-sns.distplot([float(x) for x in eigenvectors2[:, 0]])
-plt.show()
+#sns.distplot([float(x) for x in eigenvectors1[:, 0]])
+#sns.distplot([float(x) for x in eigenvectors2[:, 0]])
+#plt.show()
 
 featuredf = pd.DataFrame()
 featuredf['x0']=[float(x) for x in eigenvectors1[:, 0]]
 featuredf['x1']=[float(x) for x in eigenvectors2[:, 0]]
-
 kmeans_n=2
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
+print(eigenvalues1)
+print(eigenvalues2)
 
 sns.lineplot(data=local_time_series1, ax=ax, label=assetlist[0])
 sns.lineplot(data=local_time_series2, ax=ax, label=assetlist[1])
@@ -213,13 +166,22 @@ state_counts = np.zeros(kmeans_n)
 for M1 in kmeans_lbl:
     state_counts[M1] += 1 
     
+local_dist1 = []
+local_dist2 = []
 for M2 in range(len(kmeans_lbl)): 
     if kmeans_lbl[M2] == np.argmin(state_counts):
         ax.axvline(M2, color='black', alpha=0.15)
+        local_dist1.append(local_time_series1[M2])
+        local_dist2.append(local_time_series2[M2])
+            
 plt.title('RBFKernel Eigenvector Clustering')
 plt.legend()
-plt.grid(True)
+#plt.grid(True)
 plt.show()
+
+sns.distplot(local_dist1)
+sns.distplot(local_dist2)
+plt.show() 
 
 # Plot the evaluation results
 fig, ax = plt.subplots()
