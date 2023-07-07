@@ -43,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
@@ -109,31 +109,33 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2023-6-26"
-symbol_eddate = "2023-7-6"  
+symbol_stdate = "2020-2-28"
+symbol_eddate = "2020-3-29"  
+GROUP_LEN = 30 
 
-def fetch_assets(assets, invalidate_cache=False): 
+def fetch_assets(assets): 
 
   log_returns = None
   log_returns, _ = get_logrets(SYMBOL, symbol_stdate, symbol_eddate, assets=assets)
+  #aggreg = log_returns.groupby(log_returns.index // GROUP_LEN)
   return log_returns
 
-
-
-assetlist = [ 'QQQ', 'TLT' ]
-num_components = 4
-assets = fetch_assets(assetlist, invalidate_cache=True)
+assetlist = [ 'TLT', 'QQQ' ]
+assets = fetch_assets(assetlist)
 
 # Apply z-score in a rolling way that does not create lookahead bias 
-windowed_zscore = lambda serie: stats.zscore(serie).values[-1] 
+windowed_fn = lambda serie: np.mean(serie) #stats.zscore(serie).values[-1] 
 
 # Clean data
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
-local_time_series1 = m6_subset1[assetlist[0]].pct_change().rolling(360).apply(windowed_zscore).dropna().values
-#    .rolling(100).mean().dropna().values
-local_time_series2 = m6_subset1[assetlist[1]].pct_change().rolling(360).apply(windowed_zscore).dropna().values
-#    .rolling(100).mean().dropna().values
-    
+local_time_series1 = m6_subset1[assetlist[0]].diff() \
+  .dropna().values
+                                             #.rolling(360).apply(windowed_fn)
+                                             
+local_time_series2 = m6_subset1[assetlist[1]].diff() \
+  .dropna().values
+                                              #.rolling(360).apply(windowed_fn).dropna().values
+
 # Evaluate kernel self similarity matrix 
 kernel = gpytorch.kernels.RBFKernel(lengthscale=10)
 eigenvalues1, eigenvectors1 = np.linalg.eig( 
@@ -147,21 +149,21 @@ eigenvalues2, eigenvectors2 = np.linalg.eig(
   #   Random Fourier Features + 
   #   Wavelet research
   # )
-#sns.distplot([float(x) for x in eigenvectors1[:, 0]])
-#sns.distplot([float(x) for x in eigenvectors2[:, 0]])
+#sns.distplot([float(x) for x in eigenvectors1[:, 1]])
+#sns.distplot([float(x) for x in eigenvectors2[:, 1]])
 #plt.show()
 
 featuredf = pd.DataFrame()
-featuredf['x0']=[float(x) for x in eigenvectors1[:, 0]]
-featuredf['x1']=[float(x) for x in eigenvectors2[:, 0]]
-kmeans_n=2
+featuredf['x0']=[float(x) for x in eigenvectors1[:, 1]]
+featuredf['x1']=[float(x) for x in eigenvectors2[:, 1]]
+kmeans_n=3
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
 print(eigenvalues1)
 print(eigenvalues2)
 
-sns.lineplot(data=local_time_series1, ax=ax, label=assetlist[0])
-sns.lineplot(data=local_time_series2, ax=ax, label=assetlist[1])
+sns.lineplot(data=np.cumsum(local_time_series1), ax=ax, label=assetlist[0])
+sns.lineplot(data=np.cumsum(local_time_series2), ax=ax, label=assetlist[1])
 state_counts = np.zeros(kmeans_n)
 for M1 in kmeans_lbl:
     state_counts[M1] += 1 
@@ -169,7 +171,7 @@ for M1 in kmeans_lbl:
 local_dist1 = []
 local_dist2 = []
 for M2 in range(len(kmeans_lbl)): 
-    if kmeans_lbl[M2] == np.argmin(state_counts):
+    if kmeans_lbl[M2] == np.argmin(state_counts):#kmeans_lbl[-1]:
         ax.axvline(M2, color='black', alpha=0.15)
         local_dist1.append(local_time_series1[M2])
         local_dist2.append(local_time_series2[M2])
@@ -195,7 +197,7 @@ cbar.ax.set_ylabel('similarity measure', rotation=-90, va="bottom")
 # Set labels
 ax.set_xlabel('time')
 ax.set_ylabel('time')
-ax.set_title('Affinity Matrix')
+ax.set_title('kernel self-similarity matrix')
 
 # Show the plot
 plt.grid(False)
