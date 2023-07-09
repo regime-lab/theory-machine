@@ -43,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
@@ -109,8 +109,8 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2020-5-1"
-symbol_eddate = "2020-5-15"  
+symbol_stdate = "2020-2-27"
+symbol_eddate = "2020-3-9"  
 GROUP_LEN = 30 
 
 def fetch_assets(assets): 
@@ -129,10 +129,10 @@ windowed_fn = lambda serie: stats.zscore(serie).values[-1]
 # Clean data
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
 local_time_series1 = m6_subset1[assetlist[0]].apply(np.log) \
-                                             .rolling(350).apply(windowed_fn) \
+                                             .rolling(30).apply(windowed_fn) \
                                              .dropna().values                                          
 local_time_series2 = m6_subset1[assetlist[1]].apply(np.log) \
-                                             .rolling(350).apply(windowed_fn) \
+                                             .rolling(30).apply(windowed_fn) \
                                              .dropna().values
 
 # Evaluate kernel self similarity matrix 
@@ -170,7 +170,7 @@ for M1 in kmeans_lbl:
 local_dist1 = []
 local_dist2 = []
 for M2 in range(len(kmeans_lbl)): 
-    if kmeans_lbl[M2] == np.argmin(state_counts):#kmeans_lbl[-1]:
+    if kmeans_lbl[M2] == np.argmax(state_counts):
         ax.axvline(M2, color='black', alpha=0.15)
         local_dist1.append(local_time_series1[M2])
         local_dist2.append(local_time_series2[M2])
