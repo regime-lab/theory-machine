@@ -43,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
@@ -109,8 +109,8 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 ### PARAMS ### 
 
 SYMBOL = 'IWM'
-symbol_stdate = "2020-2-28"
-symbol_eddate = "2020-3-29"  
+symbol_stdate = "2020-5-1"
+symbol_eddate = "2020-5-15"  
 GROUP_LEN = 30 
 
 def fetch_assets(assets): 
@@ -120,21 +120,20 @@ def fetch_assets(assets):
   #aggreg = log_returns.groupby(log_returns.index // GROUP_LEN)
   return log_returns
 
-assetlist = [ 'TLT', 'QQQ' ]
+assetlist = [ 'TLT', 'SPY' ]
 assets = fetch_assets(assetlist)
 
 # Apply z-score in a rolling way that does not create lookahead bias 
-windowed_fn = lambda serie: np.mean(serie) #stats.zscore(serie).values[-1] 
+windowed_fn = lambda serie: stats.zscore(serie).values[-1] 
 
 # Clean data
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
-local_time_series1 = m6_subset1[assetlist[0]].diff() \
-  .dropna().values
-                                             #.rolling(360).apply(windowed_fn)
-                                             
-local_time_series2 = m6_subset1[assetlist[1]].diff() \
-  .dropna().values
-                                              #.rolling(360).apply(windowed_fn).dropna().values
+local_time_series1 = m6_subset1[assetlist[0]].apply(np.log) \
+                                             .rolling(350).apply(windowed_fn) \
+                                             .dropna().values                                          
+local_time_series2 = m6_subset1[assetlist[1]].apply(np.log) \
+                                             .rolling(350).apply(windowed_fn) \
+                                             .dropna().values
 
 # Evaluate kernel self similarity matrix 
 kernel = gpytorch.kernels.RBFKernel(lengthscale=10)
@@ -156,14 +155,14 @@ eigenvalues2, eigenvectors2 = np.linalg.eig(
 featuredf = pd.DataFrame()
 featuredf['x0']=[float(x) for x in eigenvectors1[:, 1]]
 featuredf['x1']=[float(x) for x in eigenvectors2[:, 1]]
-kmeans_n=3
+kmeans_n=2
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
 print(eigenvalues1)
 print(eigenvalues2)
 
-sns.lineplot(data=np.cumsum(local_time_series1), ax=ax, label=assetlist[0])
-sns.lineplot(data=np.cumsum(local_time_series2), ax=ax, label=assetlist[1])
+sns.lineplot(data=local_time_series1, ax=ax, label=assetlist[0])
+sns.lineplot(data=local_time_series2, ax=ax, label=assetlist[1])
 state_counts = np.zeros(kmeans_n)
 for M1 in kmeans_lbl:
     state_counts[M1] += 1 
