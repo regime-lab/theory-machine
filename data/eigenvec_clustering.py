@@ -18,7 +18,10 @@ from tqdm import tqdm
 
 
 def get_data(loc_sym, start_date, end_date, ref_index=None): 
-
+  ''' get_data
+      get data between start_date and end_date from IEX cloud for a specific 
+      symbol 
+  '''
   col='close'
   get_year = lambda N: int(N.split('-')[0])
   get_month = lambda N: int(N.split('-')[1])
@@ -40,7 +43,7 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
     dateCol = 'fullTimestamp'
 
     try:
-      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=pk_3f469db9f9cb455b99f7a7c125b48a86" 
+      ENDP = f"https://cloud.iexapis.com/stable/stock/{loc_sym}/chart/date/{date}?token=TODO" 
       ohlc_df = None
       ohlc = requests.get(ENDP).json()
       ohlc_df = pd.DataFrame.from_records(ohlc)
@@ -69,7 +72,9 @@ def get_data(loc_sym, start_date, end_date, ref_index=None):
   return OHLC
 
 def get_barset(symbol, symbol_stdate, symbol_eddate, ref_index=None):
-
+  ''' get_barset
+      get dataframe for a symbol between symbol_stdate and symbol_eddate 
+  '''
   cls = 'close' 
   ohlc_df = get_data(symbol, symbol_stdate, symbol_eddate, ref_index=ref_index)
   local_barset = pd.DataFrame()
@@ -80,7 +85,9 @@ def get_barset(symbol, symbol_stdate, symbol_eddate, ref_index=None):
   return local_barset, local_barset.index
     
 def get_logrets(symbol_base, start_date, end_date, assets=None):
-
+  ''' get_logrets
+      get log returns or just closes dataframe(s) TODO 
+  '''
   log_returns = pd.DataFrame()
   base_ohlc = pd.DataFrame()
   _, IDX = get_barset(symbol_base, start_date, end_date)
@@ -105,63 +112,58 @@ def get_logrets(symbol_base, start_date, end_date, assets=None):
 
 ### PARAMS ### 
 
+# russell 2000 anchor 
 SYMBOL = 'IWM'
+# start/end date of period 
 symbol_stdate = "2023-6-23"
 symbol_eddate = "2023-7-12"  
 
 def fetch_assets(assets): 
-
+  ''' fetch_assets
+  '''
   log_returns = None
   log_returns, _ = get_logrets(SYMBOL, symbol_stdate, symbol_eddate, assets=assets)
-  #aggreg = log_returns.groupby(log_returns.index // GROUP_LEN)
   return log_returns
 
+# List of tickers 
 assetlist = [ 'QQQ', 'NVDA' ]
 assets = fetch_assets(assetlist)
 
-# Apply z-score in a rolling way that does not create lookahead bias 
+# TODO (tbd) Apply z-score in a rolling way that does not create lookahead bias 
 windowed_fn = lambda serie: stats.zscore(serie).values[-1] 
 
-# Clean data
+# Set up 1st-order differenced data and separate dataset for rolling 1hr variance 
 one_hr=60
 m6_subset1 = assets.replace([np.inf, -np.inf], np.nan).dropna().reset_index().drop(columns='index')
 local_time_series1 = m6_subset1[assetlist[0]] .diff() \
                                               .dropna().values
-                                             #.rolling(150).apply(windowed_fn) \
                                                                                    
 local_time_series2 = m6_subset1[assetlist[1]] .diff() \
                                               .dropna().values
-                                            # .rolling(150).apply(windowed_fn) \
                                               
 rolling_var1 = m6_subset1[assetlist[1]] .diff().rolling(one_hr).var() \
                                               .values
                                              
-# Evaluate kernel self similarity matrix 
+# Evaluate kernel self-similarity matrix 
 kernel = gpytorch.kernels.RBFKernel(lengthscale=1)
+# Get eigenvalues and vectors for each series 
 eigenvalues1, eigenvectors1 = np.linalg.eig( 
   (kernel(torch.tensor(local_time_series1)).evaluate()).detach().numpy() )
 eigenvalues2, eigenvectors2 = np.linalg.eig(
   (kernel(torch.tensor(local_time_series2)).evaluate()).detach().numpy() )
-       
-# Cluster eigenvectors (
-  # TODO 
-  #   Spectral clustering + 
-  #   Random Fourier Features + 
-  #   Wavelet research
-  # )
-#sns.distplot([float(x) for x in eigenvectors1[:, 1]])
-#sns.distplot([float(x) for x in eigenvectors2[:, 1]])
-#plt.show()
-
+      
+# Create feature dataframe with principal eigenvector of 1st series as feature 
 featuredf = pd.DataFrame()
 featuredf['x0']=[float(x) for x in eigenvectors1[:, 0]]
+# TODO 
 #featuredf['x1']=[float(x) for x in eigenvalues2]
+
+# KMeans cluster the eigenvector results 
 kmeans_n=2
 kmeans_lbl = KMeans(n_clusters=kmeans_n).fit(featuredf).labels_
 fig,ax=plt.subplots()
 axx=ax.twinx()
-#print(eigenvalues1)
-#sns.lineplot(data=featuredf, ax=ax)
+# Plot 
 sns.lineplot(data=local_time_series1, ax=axx, label=assetlist[0])
 sns.lineplot(data=local_time_series2, ax=axx, label=assetlist[1])
 sns.lineplot(data=rolling_var1, ax=ax, label='rolling_var')
@@ -180,21 +182,9 @@ for M2 in range(len(kmeans_lbl)):
             
 plt.title('RBFKernel Eigenvector Clustering')
 plt.legend()
-#plt.grid(True)
 plt.show()
-# TODO https://arxiv.org/abs/2307.04953
 
-# continuous wavelet transform
-'''
-import pywt
-x = np.arange(len(local_time_series2))
-y = local_time_series2
-coef, freqs = pywt.cwt(y, [np.arange(1,500)], 'morl')
-plt.matshow(coef) 
-plt.show() 
-'''
-
-# signature hack #TODO placeholder for logic 
+#TODO placeholder for logic 
 sns.lineplot(data=np.cumsum(local_dist2))
 plt.legend()
 plt.show() 
