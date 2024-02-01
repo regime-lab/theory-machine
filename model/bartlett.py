@@ -16,10 +16,6 @@ def bartletts_method(data, segment_len):
 
 
 def frequency_diagram(signal, segment_len=64):
-
-  # show raw signal 
-  plt.plot(signal)
-  plt.show()
   
   # get result
   result = bartletts_method(signal, segment_len)
