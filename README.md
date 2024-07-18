@@ -1,3 +1,4 @@
 # risky-forecasts
 
-WIP
+Under construction..
+A Bayesian micro-library. 
